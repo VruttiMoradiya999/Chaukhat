@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chaukhat 🏛️ — Indoor 3D Gaussian Splatting Studio</title>
+  <meta name="description" content="Capture smartphone video or photos of indoor spaces and automatically reconstruct 3D Gaussian Splats with Nerfstudio and Modal.">
+  
+  <!-- Modern Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <!-- JSZip for client-side multi-image bundling -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Background Glow Orbs -->
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
+  <div class="glow-orb orb-3"></div>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-group">
+        <div class="logo-icon">🏛️</div>
+        <div>
+          <h1 class="logo-title">Chaukhat</h1>
+          <p class="logo-subtitle">Indoor 3D Gaussian Splatting Studio</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div id="backend-status-badge" class="badge badge-neutral" title="API Status">
+          <span class="status-dot"></span>
+          <span id="backend-status-text">Checking Backend...</span>
+        </div>
+        <button id="settings-toggle-btn" class="btn-icon" title="API Endpoint Settings" aria-label="Settings">
+          ⚙️
+        </button>
+      </div>
+    </header>
+
+    <!-- Settings Bar (collapsible) -->
+    <section id="settings-panel" class="settings-panel hidden">
+      <div class="settings-inner">
+        <label for="api-url-input">Modal API Base URL:</label>
+        <div class="input-with-button">
+          <input type="url" id="api-url-input" placeholder="e.g. https://your-workspace--chaukhat-api.modal.run">
+          <button id="save-api-url-btn" class="btn btn-secondary btn-sm">Save & Test</button>
+        </div>
+        <p class="settings-hint">Leave blank to use current origin when hosted directly on Modal.</p>
+      </div>
+    </section>
+
+    <!-- Main Workspace -->
+    <main class="main-content">
+      
+      <!-- Capture Section (Tabs: Camera vs File Upload) -->
+      <section id="capture-section" class="card capture-card">
+        <nav class="tabs-nav" aria-label="Capture Methods">
+          <button id="tab-camera-btn" class="tab-btn active" data-tab="camera-pane">
+            <span class="tab-icon">📹</span>
+            <span>Live Camera</span>
+          </button>
+          <button id="tab-upload-btn" class="tab-btn" data-tab="upload-pane">
+            <span class="tab-icon">📁</span>
+            <span>Upload Video / Photos</span>
+          </button>
+        </nav>
+
+        <!-- PANE 1: Camera Capture -->
+        <div id="camera-pane" class="tab-pane active">
+          <!-- Camera Pre-activation View -->
+          <div id="camera-idle-view" class="camera-idle-view">
+            <div class="idle-illustration">📸</div>
+            <h3>Direct Smartphone / Webcam Capture</h3>
+            <p class="text-muted">
+              Record a continuous walk-through video or trigger an automated burst sequence directly from your device.
+            </p>
+            <div class="camera-start-controls">
+              <button id="start-camera-btn" class="btn btn-primary btn-lg">
+                <span>Start Camera</span>
+              </button>
+            </div>
+            <p class="tip-pill">💡 Tip: Walk smoothly at a gentle pace with 70–80% visual overlap between angles.</p>
+          </div>
+
+          <!-- Active Camera Viewport -->
+          <div id="camera-active-view" class="camera-active-view hidden">
+            <div class="camera-stream-wrapper">
+              <video id="camera-video-preview" autoplay playsinline muted></video>
+              
+              <!-- Shutter Flash Effect -->
+              <div id="camera-flash" class="camera-flash"></div>
+
+              <!-- Live Recording Overlay -->
+              <div id="recording-overlay" class="recording-overlay hidden">
+                <div class="rec-badge">
+                  <span class="rec-pulse"></span>
+                  <span id="rec-mode-label">REC</span>
+                  <span id="rec-timer">00:00</span>
+                </div>
+                <div id="burst-count-badge" class="burst-badge hidden">
+                  📸 <span id="burst-count-num">0</span> photos captured
+                </div>
+              </div>
+
+              <!-- Overlaid Walking Guide -->
+              <div class="camera-guide-overlay">
+                <span class="crosshair-guide">+</span>
+              </div>
+            </div>
+
+            <!-- Camera Controls Bar -->
+            <div class="camera-controls-bar">
+              <div class="camera-selector-group">
+                <select id="camera-device-select" class="dropdown-select" title="Switch Camera">
+                  <option value="">Detecting cameras...</option>
+                </select>
+                <button id="switch-facing-btn" class="btn-icon btn-sm" title="Flip Camera (Front/Back)">🔄</button>
+              </div>
+
+              <div class="camera-action-buttons">
+                <!-- Video Record Mode Button -->
+                <button id="record-video-toggle-btn" class="btn btn-danger">
+                  <span class="btn-dot"></span>
+                  <span id="record-video-btn-text">Record Video Clip</span>
+                </button>
+
+                <!-- Interval Photo Burst Button -->
+                <button id="burst-photo-toggle-btn" class="btn btn-secondary">
+                  <span>⏱️ Auto Burst Scan</span>
+                </button>
+
+                <button id="stop-camera-btn" class="btn btn-ghost" title="Turn Camera Off">Stop Camera</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Video Review State (After recording finishes) -->
+          <div id="recorded-preview-container" class="recorded-preview-container hidden">
+            <h4>Review Recorded Capture</h4>
+            <div class="review-video-box">
+              <video id="recorded-playback-video" controls playsinline></video>
+            </div>
+            <div class="review-info-bar">
+              <span id="recorded-file-size" class="badge badge-accent">Size: 0 MB</span>
+              <span id="recorded-duration" class="badge badge-neutral">Duration: 0s</span>
+            </div>
+            <div class="review-actions">
+              <button id="accept-recording-btn" class="btn btn-success">
+                ✅ Use This Recording
+              </button>
+              <button id="retake-recording-btn" class="btn btn-secondary">
+                🔄 Retake
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- PANE 2: File Upload -->
+        <div id="upload-pane" class="tab-pane">
+          <div id="dropzone" class="dropzone" tabindex="0">
+            <input type="file" id="file-input" class="hidden-file-input" accept="video/mp4,video/quicktime,video/webm,video/x-m4v,application/zip,.mp4,.mov,.webm,.m4v,.zip,image/jpeg,image/png,image/webp,image/heic" multiple>
+            
+            <div class="dropzone-content">
+              <div class="dropzone-icon">☁️</div>
+              <h3>Drag & drop video or photos here</h3>
+              <p class="dropzone-desc">
+                Supports smartphone videos (<strong>.mp4</strong>, <strong>.mov</strong>, <strong>.webm</strong>), <strong>.zip</strong> archives, or <strong>select multiple photos</strong> (we'll automatically zip them for you!).
+              </p>
+              <button type="button" id="browse-files-btn" class="btn btn-secondary">Browse Files</button>
+            </div>
+
+            <!-- Multi-Image Zipping Progress -->
+            <div id="zipping-progress" class="zipping-progress hidden">
+              <div class="spinner"></div>
+              <p id="zipping-label">Bundling photos into archive...</p>
+              <div class="mini-progress-bar">
+                <div id="zipping-fill" class="mini-progress-fill" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Selected File Card -->
+          <div id="selected-file-card" class="selected-file-card hidden">
+            <div class="file-info-group">
+              <span id="selected-file-icon" class="file-icon">🎬</span>
+              <div class="file-details">
+                <div id="selected-file-name" class="file-name">capture.mp4</div>
+                <div id="selected-file-meta" class="file-meta">24.5 MB</div>
+              </div>
+            </div>
+            <button id="remove-file-btn" class="btn-icon text-danger" title="Remove file">✕</button>
+          </div>
+        </div>
+
+        <!-- Pipeline Tuning Bar -->
+        <div class="pipeline-tuning-bar">
+          <div class="tuning-label-group">
+            <span class="tuning-title">Training Steps:</span>
+            <span class="tuning-desc">Splatfacto iterations</span>
+          </div>
+          <div class="iterations-selector">
+            <button type="button" class="iter-btn" data-iter="5000">5k (Draft ~2m)</button>
+            <button type="button" class="iter-btn active" data-iter="15000">15k (Standard ~6m)</button>
+            <button type="button" class="iter-btn" data-iter="30000">30k (Ultra ~12m)</button>
+            <input type="hidden" id="iterations-value" value="15000">
+          </div>
+        </div>
+
+        <!-- Submit Launch Button -->
+        <div class="launch-actions">
+          <button id="launch-pipeline-btn" class="btn btn-primary btn-xl" disabled>
+            <span class="btn-icon-sparkle">✨</span>
+            <span>Generate 3D Gaussian Splat</span>
+          </button>
+        </div>
+
+      </section>
+
+      <!-- Processing & Tracking Section (Revealed when job starts) -->
+      <section id="tracking-section" class="card tracking-card hidden">
+        <div class="tracking-header">
+          <div>
+            <div class="tracking-title-row">
+              <h2>3D Reconstruction Progress</h2>
+              <span id="live-job-badge" class="badge badge-pulse">Job ID: <span id="job-id-label">...</span></span>
+            </div>
+            <p id="tracking-status-desc" class="text-muted">Initializing serverless GPU worker...</p>
+          </div>
+          <div class="time-elapsed-box">
+            <span class="time-label">Elapsed:</span>
+            <span id="elapsed-time-counter" class="time-value">00:00</span>
+          </div>
+        </div>
+
+        <!-- Overall Progress Bar -->
+        <div class="progress-bar-container">
+          <div id="main-progress-bar" class="progress-bar-fill" style="width: 10%;"></div>
+        </div>
+
+        <!-- 6-Stage Visual Stepper -->
+        <div class="pipeline-stepper">
+          <div id="step-queued" class="step-node active">
+            <div class="step-circle">1</div>
+            <div class="step-content">
+              <span class="step-name">Queued</span>
+              <span class="step-sub">Scheduled on Modal</span>
+            </div>
+          </div>
+
+          <div id="step-extracting_frames" class="step-node">
+            <div class="step-circle">2</div>
+            <div class="step-content">
+              <span class="step-name">Extract Frames</span>
+              <span class="step-sub">FFmpeg ~2fps (1600px)</span>
+            </div>
+          </div>
+
+          <div id="step-estimating_poses" class="step-node">
+            <div class="step-circle">3</div>
+            <div class="step-content">
+              <span class="step-name">Estimate Poses</span>
+              <span class="step-sub">COLMAP Sequential SfM</span>
+            </div>
+          </div>
+
+          <div id="step-training" class="step-node">
+            <div class="step-circle">4</div>
+            <div class="step-content">
+              <span class="step-name">Train Splats</span>
+              <span class="step-sub">Nerfstudio Splatfacto</span>
+            </div>
+          </div>
+
+          <div id="step-exporting" class="step-node">
+            <div class="step-circle">5</div>
+            <div class="step-content">
+              <span class="step-name">Export PLY</span>
+              <span class="step-sub">Gaussian Splat Point Cloud</span>
+            </div>
+          </div>
+
+          <div id="step-done" class="step-node">
+            <div class="step-circle">6</div>
+            <div class="step-content">
+              <span class="step-name">Ready!</span>
+              <span class="step-sub">Persistent in Volume</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Real-time Stats Grid -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">Extracted Frames</span>
+            <span id="stat-extracted-frames" class="stat-value">-</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Registered Poses</span>
+            <span id="stat-registered-poses" class="stat-value">-</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Target Iterations</span>
+            <span id="stat-iterations" class="stat-value">15,000</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Worker GPU</span>
+            <span class="stat-value">NVIDIA L4 / A10G</span>
+          </div>
+        </div>
+
+        <!-- Live Activity Log -->
+        <div class="logs-container">
+          <div class="logs-header">
+            <span>Pipeline Activity Log</span>
+            <span class="logs-live-indicator">LIVE</span>
+          </div>
+          <div id="terminal-logs" class="terminal-logs">
+            <div class="log-entry log-info">[00:00] Initializing job request...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Results & 3D Viewer Section (Revealed on Done) -->
+      <section id="results-section" class="card results-card hidden">
+        <div class="results-banner">
+          <div class="success-icon">🎉</div>
+          <div>
+            <h2>3D Gaussian Splat Generated Successfully!</h2>
+            <p class="text-muted">Your photorealistic 3D splat is ready for download and interactive viewing.</p>
+          </div>
+        </div>
+
+        <div class="results-actions-grid">
+          <div class="result-action-card primary-action">
+            <h3>Download Model File</h3>
+            <p>Standard Gaussian Splat point cloud (<span class="code-tag">model.ply</span>) compatible with all major 3D splat viewers.</p>
+            <a id="download-ply-btn" class="btn btn-primary btn-lg" href="#" download="chaukhat_model.ply">
+              <span>⬇️ Download model.ply</span>
+              <span id="download-file-size" class="btn-subtext">Calculating size...</span>
+            </a>
+          </div>
+
+          <div class="result-action-card">
+            <h3>Interactive 3D Viewers</h3>
+            <p>Drag and drop your downloaded <span class="code-tag">model.ply</span> directly into any of these free web viewers:</p>
+            <div class="viewer-links">
+              <a href="https://playcanvas.com/supersplat/editor" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+                🌐 Open PlayCanvas SuperSplat
+              </a>
+              <a href="https://antimatter15.com/splat/" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+                ✨ Open Antimatter15 Viewer
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div class="results-reset-row">
+          <button id="reset-workspace-btn" class="btn btn-ghost">
+            ← Process Another Indoor Scene
+          </button>
+        </div>
+      </section>
+
+      <!-- Failure Alert Section (Revealed on Failed) -->
+      <section id="error-section" class="card error-card hidden">
+        <div class="error-banner">
+          <div class="error-icon">⚠️</div>
+          <div>
+            <h3>Reconstruction Failed</h3>
+            <p id="error-message-text" class="error-text">An unexpected error occurred during processing.</p>
+          </div>
+        </div>
+
+        <div class="error-guidance">
+          <h4>💡 Recommended Fixes:</h4>
+          <ul>
+            <li><strong>Re-capture Slower:</strong> COLMAP requires sharp, high-overlap images. Move at a slow walking pace.</li>
+            <li><strong>Increase Lighting:</strong> Turn on indoor ceiling and floor lamps to reduce camera sensor noise and motion blur.</li>
+            <li><strong>Keep 70–80% Overlap:</strong> Ensure each frame sees mostly what the previous frame saw.</li>
+          </ul>
+        </div>
+
+        <div class="error-actions">
+          <button id="error-retry-btn" class="btn btn-primary">Try Again With New Capture</button>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>Chaukhat 🏛️ — Serverless 3D Gaussian Splatting powered by <strong>Modal</strong> & <strong>Nerfstudio</strong></p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

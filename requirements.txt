@@ -1,0 +1,7 @@
+# Local development and client requirements
+modal==0.64.9
+fastapi==0.111.0
+python-multipart==0.0.9
+requests==2.32.3
+tqdm==4.66.4
+pydantic==2.7.4
